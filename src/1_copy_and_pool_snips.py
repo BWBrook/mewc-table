@@ -1,26 +1,7 @@
 import os, shutil, json, csv, sys
 from pathlib import Path
 from collections import Counter
-
-def load_config():
-    # Locate params.json in the same directory as this script
-    script_dir = Path(__file__).resolve().parent
-    config_path = script_dir / 'params.json'
-
-    if not config_path.is_file():
-        print(f"Configuration file '{config_path}' does not exist.")
-        sys.exit(1)
-
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-        return config
-    except json.JSONDecodeError as e:
-        print(f"Error parsing JSON file '{config_path}': {e}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Unexpected error reading '{config_path}': {e}")
-        sys.exit(1)
+from config import load_config
 
 def find_snips_directories(input_dir):
     snips_dirs = []

@@ -1,0 +1,18 @@
+{
+    "service_directory": "C:\\camera_traps\\service",
+    "snip_pool": "C:\\camera_traps\\snip_pool\\snips",
+    "csv_path": "C:\\camera_traps\\snip_pool\\mewc_out.csv",
+    "classified_snips_path": "C:\\camera_traps\\species_breakout",
+    "output_table": "C:\\camera_traps\\mewc_species-site_id_ausplots_feb24",
+    "mewc_predict_powershell": {
+        "script_path": "C:\\camera_traps\\mewc\\mewc_predict.ps1",
+        "input_snips": "C:\\camera_traps\\snip_pool",
+        "predict_env": "C:\\camera_traps\\mewc\\predict.env",
+        "class_map": "C:\\camera_traps\\mewc\\class_map.yaml",
+        "model_file": "C:\\camera_traps\\mewc\\vtl_mewc.keras",
+        "gpu_id": "0"
+    },
+    "probability_bins": [99, 95, 90, 70, 50, 30, 10],
+    "indep_event_interval_minutes": 5,
+    "low_confidence_prob_threshold": 0.2
+}

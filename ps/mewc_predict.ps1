@@ -17,7 +17,11 @@ Function MEWC_SCRIPT {
   Param($IN_DIR, $PARAMS, $CL, $MODEL)
   Write-Host "Site Directory: $IN_DIR"
   $docker_predict = "docker run --env CUDA_VISIBLE_DEVICES=$g --env-file $PARAMS --gpus all --interactive --tty --rm --volume `"${IN_DIR}:/images`" --mount type=bind,source=$MODEL,target=/code/model.keras --mount type=bind,source=$CL,target=/code/class_map.yaml zaandahl/mewc-predict"
+  $startTime = Get-Date
   Invoke-Expression $docker_predict
+  $endTime = Get-Date
+  $elapsedTime = ($endTime - $startTime).TotalSeconds
+  Write-Host "MEWC predict completed in $elapsedTime seconds."
 }
 
 docker pull zaandahl/mewc-predict

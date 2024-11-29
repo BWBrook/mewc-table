@@ -38,7 +38,7 @@ def scan_animal_folders(service_directory):
     service_path = Path(service_directory)
     animal_dirs = service_path.rglob("animal")
 
-    for animal_dir in tqdm(animal_dirs, desc="Scanning \animal folders"):
+    for animal_dir in tqdm(animal_dirs, desc="Scanning animal folders"):
         camera_site = animal_dir.parent.name  # Get parent folder as camera_site
         for class_folder in animal_dir.iterdir():
             if class_folder.is_dir():
@@ -94,28 +94,38 @@ def parse_timestamps(reconciled_df):
     """
     Parse mixed-format timestamps, ensure consistency, and reformat as 'DD/MM/YYYY HH:MM'.
     """
-    # Attempt to parse the timestamps assuming 'DD/MM/YYYY HH:MM' format
-    reconciled_df['timestamp_parsed'] = pd.to_datetime(
-        reconciled_df['timestamp'], format='%d/%m/%Y %H:%M', errors='coerce'
+    # Make a copy to avoid SettingWithCopyWarning
+    df = reconciled_df.copy()
+    
+    # First attempt: Parse as 'DD/MM/YYYY HH:MM'
+    df['timestamp_parsed'] = pd.to_datetime(
+        df['timestamp'], 
+        format='%d/%m/%Y %H:%M', 
+        errors='coerce'
     )
 
-    # Handle rows that failed the first parsing attempt
-    nat_rows = reconciled_df['timestamp_parsed'].isna()
-    if nat_rows.any():
-        reconciled_df.loc[nat_rows, 'timestamp_parsed'] = pd.to_datetime(
-            reconciled_df.loc[nat_rows, 'timestamp'], format='%Y-%m-%d %H:%M:%S', errors='coerce'
+    # Find rows that need second parsing attempt
+    nat_mask = df['timestamp_parsed'].isna()
+    
+    # Handle alternative format using recommended syntax
+    if nat_mask.any():
+        alternative_parsed = pd.to_datetime(
+            df['timestamp'][nat_mask],
+            format='%Y-%m-%d %H:%M:%S',
+            errors='coerce'
         )
+        df['timestamp_parsed'].mask(nat_mask, alternative_parsed, inplace=True)
 
-    # Sort by datetime before formatting
-    reconciled_df.sort_values(['camera_site', 'timestamp_parsed'], inplace=True)
+    # Sort by datetime
+    df.sort_values(['camera_site', 'timestamp_parsed'], inplace=True)
 
-    # Format all timestamps as 'DD/MM/YYYY HH:MM:SS'
-    reconciled_df['timestamp'] = reconciled_df['timestamp_parsed'].dt.strftime('%d/%m/%Y %H:%M:%S')
+    # Format timestamps consistently
+    df['timestamp'] = df['timestamp_parsed'].dt.strftime('%d/%m/%Y %H:%M:%S')
+    
+    # Drop working column
+    df.drop(columns=['timestamp_parsed'], inplace=True)
 
-    # Drop the intermediate column
-    reconciled_df.drop(columns=['timestamp_parsed'], inplace=True)
-
-    return reconciled_df
+    return df
 
 def reconcile_table(df, file_mapping):
     updated_rows = []
@@ -246,6 +256,32 @@ def recalc_events_and_infer_unknowns(reconciled_df, int_m=5, thresh=0.2):
     print("Event recalculation and refinement completed.")
     return reconciled_df
 
+def count_animals_per_event(df):
+    """
+    Deduplicate rows with identical timestamps within same event while tracking duplicate count.
+    Has the effect of counting animals per event.
+    
+    Args:
+        df: DataFrame with camera_site, event and timestamp columns
+        
+    Returns:
+        DataFrame with duplicates removed and count column showing number of original instances
+    """
+    # Insert count column after class_name
+    df.insert(df.columns.get_loc('class_name') + 1, 'count', 1)
+    
+    # Group by relevant columns and get size of each group
+    grouped = df.groupby(['camera_site', 'event', 'timestamp']).size().reset_index(name='dup_count')
+    
+    # Create mask for rows to keep (first occurrence of each timestamp in event)
+    keep_mask = ~df.duplicated(['camera_site', 'event', 'timestamp'])
+    
+    # Update count column with duplicate counts
+    df.loc[keep_mask, 'count'] = grouped['dup_count']
+    
+    # Return deduplicated dataframe 
+    return df[keep_mask].copy()
+
 def main():
     # Load configuration
     config_path = Path(__file__).parent / 'params.json'
@@ -268,6 +304,9 @@ def main():
     int_min = params['indep_event_interval_minutes']
     p_thresh = params['low_confidence_prob_threshold']
     reconciled_df = recalc_events_and_infer_unknowns(reconciled_df, int_min, p_thresh)
+
+    # Count animals per event and remove duplicate rows
+    reconciled_df = count_animals_per_event(reconciled_df)
 
     # Save the updated table
     save_dataframe(reconciled_df, output_table_path)
