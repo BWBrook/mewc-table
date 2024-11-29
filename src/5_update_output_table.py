@@ -259,28 +259,63 @@ def recalc_events_and_infer_unknowns(reconciled_df, int_m=5, thresh=0.2):
 def count_animals_per_event(df):
     """
     Deduplicate rows with identical timestamps within same event while tracking duplicate count.
-    Has the effect of counting animals per event.
-    
-    Args:
-        df: DataFrame with camera_site, event and timestamp columns
-        
-    Returns:
-        DataFrame with duplicates removed and count column showing number of original instances
     """
+    # Make a copy to avoid modifying original
+    df = df.copy()
+    
     # Insert count column after class_name
     df.insert(df.columns.get_loc('class_name') + 1, 'count', 1)
     
-    # Group by relevant columns and get size of each group
-    grouped = df.groupby(['camera_site', 'event', 'timestamp']).size().reset_index(name='dup_count')
+    # Process each camera site
+    all_camera_sites = df['camera_site'].unique()
     
-    # Create mask for rows to keep (first occurrence of each timestamp in event)
-    keep_mask = ~df.duplicated(['camera_site', 'event', 'timestamp'])
+    for site in tqdm(all_camera_sites, desc="Processing camera sites to count animals on each image..."):
+        # Get data for this site
+        site_mask = df['camera_site'] == site
+        
+        # Group and count duplicates
+        counts = df[site_mask].groupby(['camera_site', 'event', 'timestamp']).size()
+        
+        # Find first occurrence of each timestamp group
+        duplicates = df[site_mask].duplicated(['camera_site', 'event', 'timestamp'], keep='first')
+        
+        # Get indices of rows to update
+        update_idx = df[site_mask & ~duplicates].index
+        
+        # Update counts directly using index alignment
+        for idx in update_idx:
+            key = tuple(df.loc[idx, ['camera_site', 'event', 'timestamp']])
+            df.loc[idx, 'count'] = counts[key]
     
-    # Update count column with duplicate counts
-    df.loc[keep_mask, 'count'] = grouped['dup_count']
+    # Remove duplicate rows
+    result = df[~df.duplicated(['camera_site', 'event', 'timestamp'])].copy()
     
-    # Return deduplicated dataframe 
-    return df[keep_mask].copy()
+    # Final sanity check - align indices before comparing
+    original_counts = df.groupby(['camera_site', 'event', 'timestamp']).size()
+    result_counts = result.set_index(['camera_site', 'event', 'timestamp'])['count']
+    
+    # Reindex both Series to have the same index
+    common_index = original_counts.index.intersection(result_counts.index)
+    original_aligned = original_counts[common_index]
+    result_aligned = result_counts[common_index]
+    
+    mismatches = (original_aligned != result_aligned).sum()
+    
+    if mismatches > 0:
+        print(f"\nWARNING: Found {mismatches} count mismatches in final verification, aborting script.")
+        print("Original counts vs Result counts:")
+        mismatch_idx = original_aligned != result_aligned
+        print(pd.DataFrame({
+            'Original': original_aligned[mismatch_idx],
+            'Result': result_aligned[mismatch_idx]
+        }))
+        sys.exit(1)
+    
+    print(f"\nTotal rows in final consolidated MEWC table: {len(result)}")
+    print(f"Observations with count > 1: {len(result[result['count'] > 1])}")
+    print(f"Max number of detections in a single image: {result['count'].max()}")
+    
+    return result
 
 def main():
     # Load configuration
