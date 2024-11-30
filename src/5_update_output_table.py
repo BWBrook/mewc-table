@@ -1,9 +1,10 @@
-import os, sys, piexif, json
+import os, sys, piexif
 import pandas as pd
 from pathlib import Path
 from PIL import Image
 from datetime import datetime, timedelta
 from tqdm import tqdm
+from common import load_config
 
 def load_dataframe(output_table_path):
     """
@@ -107,23 +108,19 @@ def parse_timestamps(reconciled_df):
     # Find rows that need second parsing attempt
     nat_mask = df['timestamp_parsed'].isna()
     
-    # Handle alternative format using recommended syntax
+    # Handle alternative format without chained assignment
     if nat_mask.any():
         alternative_parsed = pd.to_datetime(
-            df['timestamp'][nat_mask],
+            df.loc[nat_mask, 'timestamp'],
             format='%Y-%m-%d %H:%M:%S',
             errors='coerce'
         )
-        df['timestamp_parsed'].mask(nat_mask, alternative_parsed, inplace=True)
+        df.loc[nat_mask, 'timestamp_parsed'] = alternative_parsed
 
-    # Sort by datetime
-    df.sort_values(['camera_site', 'timestamp_parsed'], inplace=True)
-
-    # Format timestamps consistently
+    # Sort by datetime and format consistently
+    df = df.sort_values(['camera_site', 'timestamp_parsed'])
     df['timestamp'] = df['timestamp_parsed'].dt.strftime('%d/%m/%Y %H:%M:%S')
-    
-    # Drop working column
-    df.drop(columns=['timestamp_parsed'], inplace=True)
+    df = df.drop(columns=['timestamp_parsed'])
 
     return df
 
@@ -260,8 +257,9 @@ def count_animals_per_event(df):
     """
     Deduplicate rows with identical timestamps within same event while tracking duplicate count.
     """
-    # Make a copy to avoid modifying original
-    df = df.copy()
+    GROUP_COLS = ['camera_site', 'class_name', 'event', 'timestamp']
+    
+    df = df.copy() # Make a copy to avoid modifying original
     
     # Insert count column after class_name
     df.insert(df.columns.get_loc('class_name') + 1, 'count', 1)
@@ -273,27 +271,26 @@ def count_animals_per_event(df):
         # Get data for this site
         site_mask = df['camera_site'] == site
         
-        # Group and count duplicates
-        counts = df[site_mask].groupby(['camera_site', 'event', 'timestamp']).size()
+        # Group and count duplicates using GROUP_COLS
+        counts = df[site_mask].groupby(GROUP_COLS).size()
         
         # Find first occurrence of each timestamp group
-        duplicates = df[site_mask].duplicated(['camera_site', 'event', 'timestamp'], keep='first')
+        duplicates = df[site_mask].duplicated(GROUP_COLS, keep='first')
         
         # Get indices of rows to update
         update_idx = df[site_mask & ~duplicates].index
         
         # Update counts directly using index alignment
         for idx in update_idx:
-            key = tuple(df.loc[idx, ['camera_site', 'event', 'timestamp']])
+            key = tuple(df.loc[idx, GROUP_COLS])
             df.loc[idx, 'count'] = counts[key]
     
     # Remove duplicate rows
-    result = df[~df.duplicated(['camera_site', 'event', 'timestamp'])].copy()
+    result = df[~df.duplicated(GROUP_COLS)].copy()
     
     # Final sanity check - align indices before comparing
-    original_counts = df.groupby(['camera_site', 'event', 'timestamp']).size()
-    result_counts = result.set_index(['camera_site', 'event', 'timestamp'])['count']
-    
+    original_counts = df.groupby(GROUP_COLS).size()
+    result_counts = result.set_index(GROUP_COLS)['count']    
     # Reindex both Series to have the same index
     common_index = original_counts.index.intersection(result_counts.index)
     original_aligned = original_counts[common_index]
@@ -318,13 +315,14 @@ def count_animals_per_event(df):
     return result
 
 def main():
-    # Load configuration
-    config_path = Path(__file__).parent / 'params.json'
-    with open(config_path, 'r') as f:
-        params = json.load(f)
+    config = load_config()
 
-    service_directory = params['service_directory']
-    output_table_path = Path(params['output_table'])
+    service_directory = config.get('service_directory')
+    output_table_path = Path(config.get('output_table'))
+
+    if not service_directory or not output_table_path:
+        print("Configuration file is missing required fields: 'service_directory' and/or 'output_table'.")
+        sys.exit(1)
 
     # Load the consolidated table
     df = load_dataframe(output_table_path)
@@ -336,8 +334,8 @@ def main():
     reconciled_df = reconcile_table(df, file_mapping)
 
     # Recalculate events and refine classifications
-    int_min = params['indep_event_interval_minutes']
-    p_thresh = params['low_confidence_prob_threshold']
+    int_min = config.get('indep_event_interval_minutes')
+    p_thresh = config.get('low_confidence_prob_threshold')
     reconciled_df = recalc_events_and_infer_unknowns(reconciled_df, int_min, p_thresh)
 
     # Count animals per event and remove duplicate rows

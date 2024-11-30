@@ -1,7 +1,8 @@
-import shutil, sys, json
+import shutil, sys
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
+from common import load_config
 
 def load_dataframe(file_path):
     """
@@ -115,32 +116,16 @@ def process_animal_directories(service_base_dir, mapping):
                 except Exception as e:
                     print(f"Error moving {jpg_file} to 'other_object': {e}")
 
-def load_config():
-    """
-    Load params.json configuration file from the script directory.
-    """
-    script_dir = Path(__file__).resolve().parent
-    config_path = script_dir / 'params.json'
-    if not config_path.is_file():
-        print(f"Configuration file '{config_path}' does not exist.")
-        sys.exit(1)
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-        return config
-    except json.JSONDecodeError as e:
-        print(f"Error parsing JSON file '{config_path}': {e}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Unexpected error reading '{config_path}': {e}")
+def main():
+    config = load_config()
+    service_folders_base = config.get("service_directory")
+    dataframe_filename = f"{config.get('output_table')}.csv"
+
+    if not service_folders_base or not dataframe_filename:
+        print("Configuration file is missing required fields: 'service_directory' and/or 'output_table'.")
         sys.exit(1)
 
-def main():
-    # Load configuration
-    config = load_config()
-    service_folders_base = config.get("service_directory")  # Base directory containing service folders
-    dataframe_filename = "mewc_species-site_id.csv"
-    dataframe_path = Path(service_folders_base) / dataframe_filename
+    dataframe_path = Path(dataframe_filename)
 
     df = load_dataframe(dataframe_path) 
     mapping = prepare_mapping(df)

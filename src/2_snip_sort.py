@@ -1,24 +1,8 @@
-import subprocess, sys, os, shutil, json
+import subprocess, sys, os, shutil
 import pandas as pd
 from tqdm import tqdm
 from pathlib import Path
-
-def load_params(params_file):
-    """Load parameters from a JSON file."""
-    try:
-        with open(params_file, 'r') as file:
-            params = json.load(file)
-        print(f"Successfully loaded parameters from '{params_file}'.")
-        return params
-    except FileNotFoundError:
-        print(f"Error: Configuration file '{params_file}' does not exist.")
-        sys.exit(1)
-    except json.JSONDecodeError as e:
-        print(f"Error: JSON decoding error in '{params_file}': {e}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error: Unexpected error loading '{params_file}': {e}")
-        sys.exit(1)
+from common import load_config
 
 def run_powershell_script(ps_params):
     """Run the mewc_predict PowerShell script with parameters."""
@@ -62,14 +46,14 @@ def determine_prob_folder(prob, probability_bins):
 
 def classify_and_move_files(params):
     """Classify snips based on probability and move them accordingly."""
-    csv_path = params.get('csv_path')
+    csv_path = params.get('snip_pool_csv')
     snip_pool = params.get('snip_pool')
     classified_snips_path = params.get('classified_snips_path')
     probability_bins = params.get('probability_bins', [])
 
     # Validate required parameters
     if not all([csv_path, snip_pool, classified_snips_path]):
-        print("Error: One or more required parameters are missing in 'params.json'. Aborting.")
+        print("Error: One or more required parameters are missing in 'params.yaml'. Aborting.")
         sys.exit(1)
 
     # Read the CSV file
@@ -137,15 +121,18 @@ def classify_and_move_files(params):
     print("Completed classifying and moving all snips.")
 
 def main():
-    """Main function to execute the script processing."""
-    params_file = 'params.json'
-    params = load_params(params_file)
+    config = load_config()
+
+    script = config.get('mewc_predict_powershell', {})
+    if not script:
+        print("Configuration file is missing required fields: 'mewc_predict_powershell'.")
+        sys.exit(1)
 
     # Run the PowerShell script
-    run_powershell_script(params.get('mewc_predict_powershell', {}))
+    run_powershell_script(script)
 
     # Classify and move the snips based on the AI classification results
-    classify_and_move_files(params)
+    classify_and_move_files(config)
 
 if __name__ == "__main__":
     main()

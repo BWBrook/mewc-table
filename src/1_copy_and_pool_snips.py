@@ -1,7 +1,7 @@
-import os, shutil, json, csv, sys
+import csv, os, shutil, sys
 from pathlib import Path
 from collections import Counter
-from config import load_config
+from common import load_config
 
 def find_snips_directories(input_dir):
     snips_dirs = []
@@ -119,8 +119,6 @@ def copy_files(snips_dirs, output_dir, service_dir):
     print(f"Found {len(snips_dirs)} 'snips' director{'y' if len(snips_dirs) == 1 else 'ies'}.\n")
 
     for snips_dir in snips_dirs:
-        print(f"Processing folder: {snips_dir}")
-
         try:
             files = [f for f in os.listdir(snips_dir) if os.path.isfile(os.path.join(snips_dir, f))]
         except Exception as e:
@@ -149,7 +147,7 @@ def copy_files(snips_dirs, output_dir, service_dir):
 
     print("All processing complete.")
 
-if __name__ == "__main__":
+def main():
     config = load_config()
 
     # Extract necessary paths from the config
@@ -176,3 +174,6 @@ if __name__ == "__main__":
 
     # Proceed to copy files
     copy_files(snips_dirs, snip_pool, service_directory)
+
+if __name__ == "__main__":
+    main()

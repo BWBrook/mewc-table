@@ -1,7 +1,8 @@
-import json, shutil, sys, pickle
+import shutil, sys, pickle
 from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
+from common import load_config
 
 def sanity_check_species_breakout(classified_snips_path):
     """
@@ -291,26 +292,7 @@ def save_final_table(consolidated_df, table_path):
         pickle.dump(consolidated_df, f)
     print(f"Saved consolidated table pickle to {output_pickle}\n")
 
-def load_config():
-    # [Assuming params.json is in the same directory as the script]
-    script_dir = Path(__file__).resolve().parent
-    config_path = script_dir / 'params.json'
-    if not config_path.is_file():
-        print(f"Configuration file '{config_path}' does not exist.")
-        sys.exit(1)
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-        return config
-    except json.JSONDecodeError as e:
-        print(f"Error parsing JSON file '{config_path}': {e}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Unexpected error reading '{config_path}': {e}")
-        sys.exit(1)
-
 def main():
-    # Load configuration
     config = load_config()
     service_directory = config.get("service_directory")
     classified_snips_path = config.get("classified_snips_path")
