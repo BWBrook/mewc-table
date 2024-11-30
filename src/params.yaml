@@ -1,11 +1,10 @@
-# Base directories
+# Base directory for all camera data
 service_directory: 'C:\camera_traps\service'
-snip_pool: 'C:\camera_traps\snip_pool\snips'
 
-# Input/Output paths
+# Snip pooling and sorting paths
+snip_pool: 'C:\camera_traps\snip_pool\snips'
 snip_pool_csv: 'C:\camera_traps\snip_pool\mewc_out.csv'
 classified_snips_path: 'C:\camera_traps\species_breakout'
-output_table: 'C:\camera_traps\mewc_table_hr-test'
 
 # MEWC prediction configuration
 mewc_predict_powershell:
@@ -23,3 +22,9 @@ probability_bins: [99, 95, 90, 70, 50, 30, 10]
 indep_event_interval_minutes: 5
 # Probability threshold above which a dominant species replaces unknown_species in events
 low_confidence_prob_threshold: 0.2
+
+# Output path and filename (without extension) for the final consolidated table
+output_table: 'C:\camera_traps\mewc_table_hr-test'
+
+# If multiple data are to be merged, specify the folder here
+data_tables: 'C:\camera_traps\tables'
