@@ -1,15 +1,14 @@
 import os, sys, piexif
 import pandas as pd
 from pathlib import Path
-from PIL import Image
 from datetime import datetime, timedelta
+from PIL import Image
 from tqdm import tqdm
 from common import load_config
 
+# Utility functions
 def load_dataframe(output_table_path):
-    """
-    Load the consolidated species table as a pandas DataFrame.
-    """
+    """Load the consolidated species table as a pandas DataFrame."""
     csv_path = Path(str(output_table_path) + ".csv")
     pkl_path = Path(str(output_table_path) + ".pkl")
 
@@ -21,9 +20,7 @@ def load_dataframe(output_table_path):
         raise FileNotFoundError("No valid .csv or .pkl file found for output_table.")
 
 def save_dataframe(df, output_table_path):
-    """
-    Save the updated DataFrame as both CSV and Pickle files.
-    """
+    """Save the updated DataFrame as both CSV and Pickle files."""
     csv_path = output_table_path.with_suffix(".csv")
     pkl_path = output_table_path.with_suffix(".pkl")
     df.to_csv(csv_path, index=False)
@@ -126,18 +123,18 @@ def parse_timestamps(reconciled_df):
 
 def reconcile_table(df, file_mapping):
     updated_rows = []
-    df_columns = df.columns.tolist()  # Extract column names for consistency
+    df_columns = df.columns.tolist()
+    updates_count = 0  # Counter for updates
 
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="Reconciling table"):
         base_filename = create_base_filename(row['filename'])
-        camera_site = row['camera_site']  # Get the camera_site from the current row
+        camera_site = row['camera_site']
 
-        # Use (base_filename, camera_site) as the key
         if (base_filename, camera_site) in file_mapping:
             file, mapped_camera_site, class_name = file_mapping[(base_filename, camera_site)]
             if mapped_camera_site == camera_site:
                 if row['class_name'] == class_name:
-                    updated_rows.append(row.to_dict())  # Case 1: Leave row intact
+                    updated_rows.append(row.to_dict())
                 else:
                     # Case 2: Update row
                     row['class_name'] = class_name
@@ -150,14 +147,21 @@ def reconcile_table(df, file_mapping):
                     )
                     row['expert_updated'] = 3
                     updated_rows.append(row.to_dict())
-                # Remove the file from the mapping since it's reconciled
+                    updates_count += 1  # Increment counter
                 file_mapping.pop((base_filename, camera_site))
             else:
-                # Camera site mismatch; leave the row intact
                 updated_rows.append(row.to_dict())
         else:
-            # If base_filename is not in file_mapping, leave the row intact
             updated_rows.append(row.to_dict())
+
+    # Count new rows added
+    new_rows_count = sum(1 for (_, _), (_, _, class_name) in file_mapping.items() 
+                        if class_name != "other_object")
+
+    print(f"\nReconciliation summary:")
+    print(f"  - Updated classifications: {updates_count}")
+    print(f"  - New rows added: {new_rows_count}")
+    print(f"  - Total changes: {updates_count + new_rows_count}\n")
 
     # Case 3: Append new rows for unmapped files, excluding 'other_object'
     for (base_filename, mapped_camera_site), (file, _, class_name) in file_mapping.items():
@@ -214,6 +218,7 @@ def recalc_events_and_infer_unknowns(reconciled_df, int_m=5, thresh=0.2):
     - pd.DataFrame: Updated DataFrame with recalculated events and inferred unknowns.
     """
     print("Recalculating events and refining unknown_animal classifications...")
+    inferred_count = 0  # Counter for inferred unknowns
 
     # Ensure 'timestamp' is datetime with dayfirst=True to avoid warnings
     reconciled_df['timestamp'] = pd.to_datetime(reconciled_df['timestamp'], dayfirst=True, errors='coerce')
@@ -230,19 +235,22 @@ def recalc_events_and_infer_unknowns(reconciled_df, int_m=5, thresh=0.2):
     # Refine unknown_animal classifications within events
     grouped = reconciled_df.groupby(['camera_site', 'event'])
     for (camera_site, event), group in tqdm(grouped, desc="Processing events"):
-        # Identify valid species within the event
         valid_species = group[(group['class_name'] != 'unknown_animal') & (group['prob'] >= thresh)]
         
-        # Determine most frequent species
         if not valid_species.empty:
-            replacement_class = valid_species['class_name'].mode()[0]  # Most frequent class
-            replacement_prob = valid_species['prob'].max()  # Highest probability
+            replacement_class = valid_species['class_name'].mode()[0]
+            replacement_prob = valid_species['prob'].max()
 
-            # Update unknown_animal entries
             unknown_indices = group[group['class_name'] == 'unknown_animal'].index
-            reconciled_df.loc[unknown_indices, 'class_name'] = replacement_class
-            reconciled_df.loc[unknown_indices, 'prob'] = replacement_prob
-            reconciled_df.loc[unknown_indices, 'expert_updated'] = 5  # New flag for inferred unknowns
+            if len(unknown_indices) > 0:
+                inferred_count += len(unknown_indices)
+                reconciled_df.loc[unknown_indices, 'class_name'] = replacement_class
+                reconciled_df.loc[unknown_indices, 'prob'] = replacement_prob
+                reconciled_df.loc[unknown_indices, 'expert_updated'] = 5
+
+    print(f"\nEvent processing summary:")
+    print(f"  - Total events processed: {len(grouped)}")
+    print(f"  - Unknown animals inferred: {inferred_count}\n")
 
     # Clean up intermediate columns
     reconciled_df.drop(columns=['time_diff', 'new_event'], inplace=True)
@@ -260,6 +268,10 @@ def count_animals_per_event(df):
     GROUP_COLS = ['camera_site', 'class_name', 'event', 'timestamp']
     
     df = df.copy() # Make a copy to avoid modifying original
+    
+    # Drop count column if it already exists
+    if 'count' in df.columns:
+        df = df.drop(columns=['count'])
     
     # Insert count column after class_name
     df.insert(df.columns.get_loc('class_name') + 1, 'count', 1)
@@ -314,7 +326,70 @@ def count_animals_per_event(df):
     
     return result
 
+def extract_flash_fired(filepath):
+    """
+    Extract whether the flash fired from EXIF data of the image.
+    Return 1 if flash fired, 0 otherwise.
+    """
+    try:
+        exif_data = piexif.load(str(filepath))
+        if 37385 in exif_data["Exif"]:
+            flash_status = exif_data["Exif"][37385]
+            return 1 if flash_status != 0 else 0
+    except Exception as e:
+        print(f"Error reading EXIF from {filepath}: {e}")
+    return 0  # Default to no flash
+
+def create_base_filename(filename):
+    """
+    Strip -n suffix from the filename.
+    Example: 'I__00001-0.JPG' -> 'I__00001.JPG'
+    """
+    parts = filename.split('.')
+    if len(parts) < 2:
+        return filename
+    name, ext = '.'.join(parts[:-1]), parts[-1]
+    if '-' in name:
+        return name.rsplit('-', 1)[0] + '.' + ext
+    return filename
+
+def update_flash_fired(service_directory, df):
+    """
+    Update the DataFrame with a 'flash_fired' column for all images in \animal folders.
+    
+    Parameters:
+    - service_directory: Path to the service directory
+    - df: DataFrame to update (already in memory)
+    
+    Returns:
+    - Updated DataFrame with flash_fired column
+    """
+    print("Updating flash_fired data...")
+    
+    # Initialize flash_fired column
+    df['flash_fired'] = -1  # Default to -1 for rows not matched to any image
+    
+    # Iterate over camera sites
+    service_path = Path(service_directory)
+    animal_dirs = service_path.rglob("animal")
+
+    for animal_dir in tqdm(animal_dirs, desc="Processing animal folders"):
+        camera_site = animal_dir.parent.name  # Extract camera_site from folder structure
+        for image_path in animal_dir.rglob("*.JPG"):  # Recursively search for images
+            # Normalize the filename by stripping the suffix
+            base_filename = create_base_filename(image_path.name)
+            flash_fired_value = extract_flash_fired(image_path)
+
+            # Update the table for the matching filename and camera_site
+            mask = (df['filename'].apply(create_base_filename) == base_filename) & \
+                   (df['camera_site'] == camera_site)
+            df.loc[mask, 'flash_fired'] = flash_fired_value
+
+    print("Flash data updated for all matching rows.")
+    return df
+
 def main():
+    """Execute the complete workflow for updating output table."""
     config = load_config()
 
     service_directory = config.get('service_directory')
@@ -324,6 +399,7 @@ def main():
         print("Configuration file is missing required fields: 'service_directory' and/or 'output_table'.")
         sys.exit(1)
 
+    print("\nPhase 1: Updating output table...")
     # Load the consolidated table
     df = load_dataframe(output_table_path)
 
@@ -340,9 +416,14 @@ def main():
 
     # Count animals per event and remove duplicate rows
     reconciled_df = count_animals_per_event(reconciled_df)
-
-    # Save the updated table
+    
+    # Phase 2: Adding flash fired data
+    print("\nPhase 2: Adding flash fired data to adjusted classifications...")
+    reconciled_df = update_flash_fired(service_directory, reconciled_df)
+    
+    # Save the final updated table
     save_dataframe(reconciled_df, output_table_path)
+    print("\nAll updates completed successfully!")
 
 if __name__ == "__main__":
     main()

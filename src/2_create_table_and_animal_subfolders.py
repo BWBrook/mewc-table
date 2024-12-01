@@ -22,14 +22,11 @@ def sanity_check_species_breakout(classified_snips_path):
                 print(f"Aborted: One or more subfolders of the species breakout have not been sorted into their species folders. Please complete the task before continuing.")
                 sys.exit(1)
             else:
-                # Delete empty subfolder
-                shutil.rmtree(sub)
-                print(f"Deleted empty subfolder: {sub}")
+                shutil.rmtree(sub) # Delete empty subfolder
         
         # Check if the species folder itself is empty and delete if needed
         if not any(species.iterdir()):  # Check if the folder is now empty
             shutil.rmtree(species)
-            #print(f"Deleted empty species folder: {species}")
     
     print("Check passed. Species breakout directory is properly organised.\n")
 
@@ -290,18 +287,100 @@ def save_final_table(consolidated_df, table_path):
     # Save pickle
     with open(output_pickle, 'wb') as f:
         pickle.dump(consolidated_df, f)
-    print(f"Saved consolidated table pickle to {output_pickle}\n")
+    print(f"Saved consolidated table pickle to {output_pickle}")
+
+def create_base_filename(filename):
+    """
+    Create base filename by removing suffix like -0, -1, etc.
+    """
+    parts = filename.split('.')
+    if len(parts) < 2:
+        return filename
+    name, ext = '.'.join(parts[:-1]), parts[-1]
+    if '-' in name:
+        base_name = name.rsplit('-', 1)[0] + '.' + ext
+    else:
+        base_name = filename
+    return base_name
+
+def prepare_mapping(df):
+    """
+    Prepare a mapping from (camera_site, base_filename) to class_name.
+    """
+    df['base_filename'] = df['filename'].apply(create_base_filename)
+    df_sorted = df.sort_values(['camera_site', 'base_filename', 'prob'], ascending=[True, True, False])
+    mapping_df = df_sorted.drop_duplicates(subset=['camera_site', 'base_filename'], keep='first')
+    
+    mapping = {}
+    for _, row in mapping_df.iterrows():
+        key = (row['camera_site'], row['base_filename'])
+        mapping[key] = row['class_name']
+    return mapping
+
+def process_animal_directories(service_base_dir, mapping):
+    """
+    Process all \animal directories and organize files by class_name.
+    """
+    print("\nBreaking out animal folders into species subfolders...")
+    service_base = Path(service_base_dir)
+    animal_dirs = [animal_dir for animal_dir in service_base.rglob('animal') if animal_dir.is_dir()]
+    
+    if not animal_dirs:
+        print("No 'animal' directories found. Ensure the directory structure is correct.")
+        return
+    
+    for animal_dir in tqdm(animal_dirs, desc="Processing animal directories"):
+        camera_site = animal_dir.parent.name
+        print(f"\nProcessing 'animal' directory for camera_site: {camera_site}")
+        
+        relevant_keys = [key for key in mapping if key[0] == camera_site]
+        classes = {mapping[key] for key in relevant_keys}
+        
+        for class_name in classes:
+            class_dir = animal_dir / class_name
+            if not class_dir.exists():
+                class_dir.mkdir(parents=True, exist_ok=True)
+        
+        other_object_needed = False
+        other_object_dir = None
+        
+        for jpg_file in animal_dir.glob('*.JPG'):
+            base_filename = create_base_filename(jpg_file.name)
+            key = (camera_site, base_filename)
+            if key in mapping:
+                class_name = mapping[key]
+                destination_dir = animal_dir / class_name
+                destination_path = destination_dir / jpg_file.name
+                try:
+                    shutil.move(str(jpg_file), str(destination_path))
+                except Exception as e:
+                    print(f"Error moving {jpg_file}: {e}")
+            else:
+                if not other_object_needed:
+                    other_object_dir = animal_dir / "other_object"
+                    other_object_dir.mkdir(parents=True, exist_ok=True)
+                    print(f"Created 'other_object' folder: {other_object_dir}")
+                    other_object_needed = True
+                destination_path = other_object_dir / jpg_file.name
+                try:
+                    shutil.move(str(jpg_file), str(destination_path))
+                except Exception as e:
+                    print(f"Error moving {jpg_file} to 'other_object': {e}")
 
 def main():
+    """Execute the complete workflow for creating species table and organizing folders."""
     config = load_config()
+    
+    # Get configuration parameters
     service_directory = config.get("service_directory")
     classified_snips_path = config.get("classified_snips_path")
     output_table = config.get("output_table")
     
-    if not service_directory or not classified_snips_path:
-        print("Configuration file is missing required fields: 'service_directory' and/or 'classified_snips_path'.")
+    if not all([service_directory, classified_snips_path, output_table]):
+        print("Configuration file is missing required fields.")
         sys.exit(1)
     
+    print("Phase 1: Creating species-site table...")
     # Step 1: Sanity Check
     sanity_check_species_breakout(classified_snips_path)
 
@@ -315,18 +394,22 @@ def main():
     consolidated_df = compare_and_update_classifications(consolidated_df, keypair_df)
     
     # Step 5: Determine Independent Events
-    int_min = config.get("indep_event_interval_minutes")
-    p_thresh = config.get("low_confidence_prob_threshold")
-
+    int_min = config.get("indep_event_interval_minutes", 5)
+    p_thresh = config.get("low_confidence_prob_threshold", 0.2)
     consolidated_df = determine_independent_events(consolidated_df, interval_minutes=int_min, prob_threshold=p_thresh)
 
-    # Step 6: Refine 'unknown_animal' Classifications
+    # Step 6: Refine unknown_animal Classifications
     consolidated_df = refine_unknown_animal_classifications(consolidated_df, prob_threshold=p_thresh)
     
     # Step 7: Save Final Table
     save_final_table(consolidated_df, output_table)
     
-    print("All steps completed successfully!")
+    print("\nPhase 2: Breaking out animal folders for each camera site...")
+    # Step 8: Prepare mapping and process animal directories
+    mapping = prepare_mapping(consolidated_df)
+    process_animal_directories(service_directory, mapping)
+    
+    print("\nAll processing completed successfully!")
 
 if __name__ == "__main__":
     main()
