@@ -17,3 +17,6 @@ output_table: 'C:\camera_traps\mewc_table_hr-test'
 
 # If multiple past-service data tables are to be merged, specify the folder here
 data_tables: 'C:\camera_traps\past_services_to_merge'
+
+# Table containing site data for each camera, to be updated with image stats
+site_table: 'C:\camera_traps\hr_site_data.csv'
