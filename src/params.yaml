@@ -1,22 +1,26 @@
 # Base directory for all camera data
-service_directory: 'C:\camera_traps\service'
+service_directory: 'C:/camera_traps/service'
+
 # Name of the MEWC output file to process for each camera site
 mewc_filename: 'mewc_out.csv'
 
-# Directory for species classifiacation breakout of snips
-classified_snips_path: 'C:\camera_traps\species_breakout'
+# Directory for species classification breakout of snips
+classified_snips_path: 'C:/camera_traps/species_breakout'
+
 # Probability bins for species classification breakout
 probability_bins: [99, 90, 50, 20]
+
 # Separation time (minutes) between independent events
 indep_event_interval_minutes: 5
+
 # Probability threshold above which a dominant species replaces unknown_species in events
 low_confidence_prob_threshold: 0.2
 
 # Output path and filename (without extension) for the final consolidated table
-output_table: 'C:\camera_traps\mewc_table_hr-test'
+output_table: 'C:/camera_traps/mewc_table_hr-test'
 
 # If multiple past-service data tables are to be merged, specify the folder here
-data_tables: 'C:\camera_traps\past_services_to_merge'
+data_tables: 'C:/camera_traps/past_services_to_merge'
 
 # Table containing site data for each camera, to be updated with image stats
-site_table: 'C:\camera_traps\hr_site_data.csv'
+site_table: 'C:/camera_traps/hr_site_data.csv'
