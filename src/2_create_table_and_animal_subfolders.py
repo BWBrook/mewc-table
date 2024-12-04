@@ -1,8 +1,12 @@
-import shutil, sys, pickle
+import shutil, pickle
 from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
-from common import load_config
+from common import load_config, SanityCheckError
+
+class SanityCheckError(Exception):
+    """Custom exception for sanity check failures."""
+    pass
 
 def sanity_check_species_breakout(classified_snips_path):
     """
@@ -12,22 +16,24 @@ def sanity_check_species_breakout(classified_snips_path):
     """
     print("Checking format and completion of expert-checked species breakout directory...")
     species_folders = [f for f in Path(classified_snips_path).iterdir() if f.is_dir()]
-    
+
     # Check for subfolders and delete if empty
     for species in tqdm(species_folders, desc="Checking species folders"):
         subfolders = [sub for sub in species.iterdir() if sub.is_dir()]
         for sub in subfolders:
             snip_files = list(sub.glob("*.*"))  # Assuming snips have file extensions
             if snip_files:
-                print(f"Aborted: One or more subfolders of the species breakout have not been sorted into their species folders. Please complete the task before continuing.")
-                sys.exit(1)
+                raise SanityCheckError(
+                    "Aborted: One or more subfolders of the species breakout have not been sorted into their species folders. "
+                    "Please complete the task before continuing."
+                )
             else:
-                shutil.rmtree(sub) # Delete empty subfolder
-        
+                shutil.rmtree(sub)  # Delete empty subfolder
+
         # Check if the species folder itself is empty and delete if needed
         if not any(species.iterdir()):  # Check if the folder is now empty
             shutil.rmtree(species)
-    
+
     print("Check passed. Species breakout directory is properly organised.\n")
 
 def create_randname_classname_table(classified_snips_path):
@@ -87,7 +93,7 @@ def create_consolidated_species_table(service_directory):
     
     if not consolidated_data:
         print("No data to consolidate. Exiting.")
-        sys.exit(1)
+        raise SanityCheckError()
     
     # Concatenate all DataFrames
     consolidated_df = pd.concat(consolidated_data, ignore_index=True)
@@ -173,7 +179,7 @@ def determine_independent_events(consolidated_df, interval_minutes=5, prob_thres
     missing_columns = [col for col in required_columns if col not in consolidated_df.columns]
     if missing_columns:
         print(f"Error: Missing required columns: {', '.join(missing_columns)}")
-        sys.exit(1)
+        raise SanityCheckError()
 
     # Parse the 'date_time_orig' column into datetime format
     consolidated_df['timestamp'] = pd.to_datetime(
@@ -378,7 +384,7 @@ def main():
     
     if not all([service_directory, classified_snips_path, output_table]):
         print("Configuration file is missing required fields.")
-        sys.exit(1)
+        raise SanityCheckError()
     
     print("Phase 1: Creating species-site table...")
     # Step 1: Sanity Check

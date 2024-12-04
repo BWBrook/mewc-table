@@ -1,9 +1,9 @@
-import os, shutil, sys
+import os, shutil
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 from collections import Counter
-from common import load_config
+from common import load_config, SanityCheckError
 
 def find_mewc_out_files(service_directory, mewc_filename):
     """Find all mewc files in the service directory using specified filename."""
@@ -21,7 +21,7 @@ def perform_sanity_checks(mewc_files):
     if duplicates:
         print("Aborted: Duplicate camera site folder names found.")
         print(f"Duplicate folder names: {', '.join(duplicates)}")
-        sys.exit(1)
+        raise SanityCheckError()
     else:
         print("All camera site folder names are unique.")
 
@@ -79,13 +79,13 @@ def main():
 
     if not service_directory or not classified_snips_path:
         print("Error: 'service_directory' and/or 'classified_snips_path' is missing in configuration.")
-        sys.exit(1)
+        raise SanityCheckError()
 
     mewc_files = find_mewc_out_files(service_directory, mewc_filename)
 
     if not mewc_files:
         print(f"No '{mewc_filename}' files found in the service directory.")
-        sys.exit(1)
+        raise SanityCheckError()
 
     perform_sanity_checks(mewc_files)
     create_species_breakout(mewc_files, classified_snips_path, probability_bins)

@@ -1,10 +1,10 @@
-import piexif, sys
+import piexif
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 from tqdm import tqdm
-from common import load_config
+from common import load_config, SanityCheckError
 
 def load_site_table(site_table_path):
     """Load the site table CSV and verify required columns."""
@@ -13,10 +13,10 @@ def load_site_table(site_table_path):
         site_table = pd.read_csv(site_table_path)
     except Exception as e:
         print(f"Error loading site table: {e}")
-        sys.exit(1)
+        raise SanityCheckError()
     if not required_columns.issubset(site_table.columns):
         print(f"Site table must contain columns: {required_columns}")
-        sys.exit(1)
+        raise SanityCheckError()
     return site_table
 
 def get_site_directories(service_directory):
@@ -42,20 +42,20 @@ def perform_sanity_checks(site_table, site_dirs):
     missing_dirs = table_sites - dir_sites
     if missing_dirs:
         print(f"Missing site directories for sites: {missing_dirs}")
-        sys.exit(1)
+        raise SanityCheckError()
 
     # Check for missing site names in site table
     missing_sites = dir_sites - table_sites
     if missing_sites:
         print(f"Site directories not listed in site table: {missing_sites}")
-        sys.exit(1)
+        raise SanityCheckError()
 
     # Check for required subdirectories
     for site_name, site_dir in site_dirs.items():
         subdirs = [d.name for d in site_dir.iterdir() if d.is_dir()]
         if not any(sub in subdirs for sub in ['animal', 'blank']):
             print(f"Site '{site_name}' does not contain 'animal' or 'blank' subdirectories.")
-            sys.exit(1)
+            raise SanityCheckError()
 
 def get_image_files(site_dir):
     """Recursively get all image files under a site directory."""
@@ -148,7 +148,7 @@ def main():
 
     if not service_directory or not site_table_path:
         print("Error: 'service_directory' and/or 'site_table' is missing in configuration.")
-        sys.exit(1)
+        raise SanityCheckError()
 
     print("Gathering site information and checking baseline site-table data...")
     # Load site table

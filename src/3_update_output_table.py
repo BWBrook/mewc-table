@@ -1,10 +1,10 @@
-import os, sys, piexif
+import os, piexif
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
 from PIL import Image
 from tqdm import tqdm
-from common import load_config
+from common import load_config, SanityCheckError
 
 # Utility functions
 def load_dataframe(output_table_path):
@@ -318,7 +318,7 @@ def count_animals_per_event(df):
             'Original': original_aligned[mismatch_idx],
             'Result': result_aligned[mismatch_idx]
         }))
-        sys.exit(1)
+        raise SanityCheckError()
     
     print(f"\nTotal rows in final consolidated MEWC table: {len(result)}")
     print(f"Observations with count > 1: {len(result[result['count'] > 1])}")
@@ -397,7 +397,7 @@ def main():
 
     if not service_directory or not output_table_path:
         print("Configuration file is missing required fields: 'service_directory' and/or 'output_table'.")
-        sys.exit(1)
+        raise SanityCheckError()
 
     print("\nPhase 1: Updating output table...")
     # Load the consolidated table
