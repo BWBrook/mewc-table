@@ -1,177 +1,144 @@
 # mewc-table
-Post-process wildlife camera services after running MEWC.
 
-# Camera Trap Post-Processing Workflow
+A streamlined, Docker-driven workflow for post-processing AI-classified wildlife camera trap data from the MEWC system (see https://github.com/zaandahl/mewc). This repository provides tools to integrate automated AI detection with human expertise, facilitating the refinement and analysis of species classification and camera-trap metadata.
 
-This repository contains a set of Python scripts for post-processing camera trap data run through the MEWC detection and classification AI. It allows for workflows seek to include human verification after running the AI. The tools facilitate the reconciliation, refinement, and consolidation of classification tables while integrating human corrections and contextual updates.
+---
 
-## Project Purpose
+## **Project Overview**
 
-The goal of this project is to streamline the processing of wildlife camera trap data, leveraging both automated AI detection and human expertise. It includes:
+`mewc-table` processes camera-trap data that has been run through the MEWC detection and classification AI. It allows users to:
 
-- Organising snip images into species breakout folders for human review.
-- Updating consolidated classification tables based on species breakout corrections.
-- Refining `unknown_animal` classifications using event-based context.
-- Integrating EXIF metadata, such as timestamps and flash data.
-- Producing a comprehensive species classification table for analysis.
+- Organise snip images into species breakout folders for human review.
+- Update consolidated classification tables based on human corrections.
+- Recalculate events, recover blanks, and refine `unknown_animal` classifications based on contextual information.
+- Generate comprehensive species and site statistics tables for further analysis.
 
-## Workflow Overview
+The tools are designed to enhance workflow efficiency and ensure the accuracy of classification data.
 
-1. **Initial AI Classification**:
-   - AI processes camera trap images into snip files and generates a preliminary classification table (`mewc_out.csv`) for each camera site.
+---
 
-2. **Snip Organization**:
-   - Snip images are organized into folders based on species, with probability bins for human verification.
+## **Workflow**
 
-3. **Human Verification**:
-   - Experts validate classifications, moving images into appropriate species folders or creating new folders for unidentified species.
+The workflow consists of four scripts, each addressing a specific stage of the post-processing pipeline:
 
-4. **Reconciliation**:
-   - Scripts reconcile the updated folder structure with the AI-generated classification tables, incorporating corrections.
+1. **Breakout Snips into Species Folders**
+   - **Script**: `1_breakout_snips.py`
+   - **Description**: Organises AI-classified snips into species folders with optional probability binning for expert verification.
 
-5. **Refinement**:
-   - Events are recalculated based on time intervals and contextual species information.
-   - `unknown_animal` classifications are inferred based on event-level context.
+2. **Create Species-Site Table and Animal Subfolders**
+   - **Script**: `2_create_table_and_animal_subfolders.py`
+   - **Description**: Generates a consolidated table from MEWC outputs and organizes camera site animal folders into species subfolders based on human corrections.
 
-6. **Final Table Production**:
-   - A comprehensive table is produced with species classifications, timestamps, and metadata.
+3. **Update Output Table**
+   - **Script**: `3_update_output_table.py`
+   - **Description**: Reconciles the consolidated table with updated animal folder classifications, blank recoveries, etc., and recalculates events, and infers `unknown_animal` identities.
 
-## Features
+4. **Generate Site Statistics Table** (Optional)
+   - **Script**: `4_make_site_table.py`
+   - **Description**: Produces a statistics table summarising camera site operations, including image counts, operating days, and event details (requires an initial CSV file with camera_name, lat, lon columns at a minimum).
 
-- **Robust Image and Metadata Handling**:
-  - Supports EXIF metadata extraction (e.g., timestamps, flash data).
-  - Handles variations in file naming conventions.
+---
 
-- **Event and Contextual Refinement**:
-  - Calculates independent events based on time intervals.
-  - Infers `unknown_animal` classifications using event-level species data.
+## **Docker Setup and Usage**
 
-- **Configurable and Scalable**:
-  - Supports batch processing across multiple camera sites.
-  - Fully configurable via `params.json`.
+The workflow is containerised for ease of deployment and consistent execution across systems.
 
-## Scripts
+### **Pull the Docker Image**
 
-### 1. `1_copy_and_pool_snips.py`
-This script consolidates snip files from the service directory, pools them into a central location, and prepares them for AI-based classification.
-
-- Scans all camera site folders for `snips` directories.
-- Copies snip files into a centralized directory with unique filenames.
-- Ensures compatibility with the AI classification pipeline.
-
-### 2. `2_snip_sort.py`
-Organises snip files into species folders based on AI classification and probability bins.
-
-- Reads the AI-generated classification table (`mewc_out.csv`).
-- Sorts snip files into species folders.
-- Organizes snips into probability bins for easy human verification.
-
-### 3. `3_create_site-species_table.py`
-Generates a consolidated species classification table from AI outputs.
-
-- Merges all `mewc_out.csv` files across camera sites into a unified table.
-- Adds metadata such as `camera_site`, `expert_updated`, and `event`.
-- Prepares the initial classification table for human verification and refinement.
-
-### 4. `4_breakout_animal_folders.py`
-Processes the `\animal` folders for each camera site after human verification.
-
-- Reorganises images into species-specific subfolders within the `\animal` folder.
-- Moves unclassified or non-animal files to an `other_object` folder.
-- Ensures alignment between folder structure and species classifications.
-
-### 5. `5_update_output_table.py`
-Reconciles the consolidated species table with updates from human-verified `\animal` folders.
-
-- Updates species classifications based on the reorganization in `\animal`.
-- Appends new rows for files moved into `\animal` from non-animal folders.
-- Integrates EXIF metadata such as timestamps for newly added images.
-- Recalculates events and refines `unknown_animal` classifications based on context.
-
-### 6. `6_update_flash_fired.py`
-Adds flash metadata to the consolidated classification table.
-
-- Extracts flash data from EXIF metadata for each image in the `\animal` folders.
-- Updates the consolidated species table with a `flash_fired` column (`1` for flash, `0` otherwise).
-
-## Usage Instructions
-
-### Prerequisites
-
-- Python 3.9+
-- Required libraries: `pandas`, `numpy`, `piexif`, `Pillow`, `tqdm`
-- AI detection tool outputs: snips and `mewc_out.csv` tables.
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/<your-repo-name>.git
-   cd <your-repo-name>
-   ```
-
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### Configuration
-
-Create a `params.json` file with the following structure:
-
-```json
-{
-    "service_directory": "C:\\camera_traps\\service",
-    "snip_pool": "C:\\camera_traps\\snip_pool\\snips",
-    "csv_path": "C:\\camera_traps\\snip_pool\\mewc_out.csv",
-    "classified_snips_path": "C:\\camera_traps\\species_breakout",
-    "output_table": "C:\\camera_traps\\mewc_species-site_id_ausplots_feb24",
-    "mewc_predict_powershell": {
-        "script_path": "C:\\camera_traps\\mewc\\mewc_predict.ps1",
-        "input_snips": "C:\\camera_traps\\snip_pool",
-        "predict_env": "C:\\camera_traps\\mewc\\predict.env",
-        "class_map": "C:\\camera_traps\\mewc\\class_map.yaml",
-        "model_file": "C:\\camera_traps\\mewc\\vtt_mewc.keras",
-        "gpu_id": "0"
-    },
-    "probability_bins": [99, 95, 90, 70, 50, 30, 10],
-    "indep_event_interval_minutes": 5,
-    "low_confidence_prob_threshold": 0.2
-}
-```
-
-### Running the Scripts
-
-#### Example call to run the first script
+Pull the pre-built Docker image from DockerHub:
 ```bash
-python 1_copy_and_pool_snips.py
+docker pull bwbrook/mewc-table:latest
 ```
 
-## Outputs
+### **Run the Workflow**
 
-- **Consolidated Species Table**:
-  - File: `mewc_species-site_id.csv` (also saved as `.pkl`).
+#### **Manual Mode**
+Allows users to interactively select scripts to run:
+```bash
+docker run -it --rm --env-file /local_path/to/env/file -v /local_path/to/base_folder:/data bwbrook/mewc-table
+```
+At each step, after running 1 and then 2, the expert has the opportunity to intervene and adjust classification, recover undetected images from blank folders, etc.
+
+
+#### **Automated Mode**
+Executes a predefined sequence of scripts:
+```bash
+docker run --rm --env-file /local_path/to/env/file -v /local_path/to/data:/base_folder -e WORKFLOW_MODE=auto -e RUN_SCRIPTS="1,2,3,4" bwbrook/mewc-table
+```
+
+This option allows for a 'push-button' analysis without any human intervention, although this is not recommended.
+
+---
+
+## **Configuration**
+
+### **params.yaml**
+A baked-in configuration file provides default settings. Key parameters include:
+
+- `service_directory`: Base directory for all camera data.
+- `mewc_filename`: Name of the AI-generated classification file (default: `mewc_out.csv`).
+- `classified_snips_path`: Directory for species breakout folders.
+- `probability_bins`: Probability thresholds for binning classifications.
+- `indep_event_interval_minutes`: Time separation between independent events.
+- `output_table`: Path and filename for the consolidated species table.
+
+### **Environment Overrides (.env)**
+Users can override parameters in `params.yaml` by specifying them in an `.env` file. Example:
+
+```env
+SERVICE_DIRECTORY=/data/service
+CLASSIFIED_SNIPS_PATH=/data/species_breakout
+OUTPUT_TABLE=/data/output_table.csv
+INDEP_EVENT_INTERVAL_MINUTES=10
+```
+
+Pass the `.env` file to the container using the `--env-file` flag. A full example .env is provided in the /env folder.
+
+---
+
+## **Outputs**
+
+- **Consolidated Site-Species Table**:
+  - File: `mewc_species-site_id.csv` (or your custom filename, also saved as `.pkl`).
   - Includes columns:
     - `camera_site`: Identifier for each camera site.
     - `filename`: Original image filename.
-    - `class_id`: Numeric identifier for the species.    - 
+    - `class_id`: Numeric identifier for the species.
     - `class_name`: Final species classification.
     - `prob`: Probability of classification.
-    - `timestamp`: Image capture datetime.
+    - `count`: Number of detections on the image.
     - `flash_fired`: Whether the flash fired (`1` or `0`).
-    - `expert_updated`: Correction flags.
+    - `expert_updated`: Correction flags, where:
+      - 0 = no change from AI
+      - 1 = expert updated the classification based on the snip
+      - 2 = unknown animal was inferred based on event context, after snip sorting
+      - 3 = expert updated the classification based on the full image, after \animal folder sorting
+      - 4 = new image added to a species folder within the \animal folder from blanks, people or other_object
+      - 5 = new image of unknown_animal updated to species based on event context.
+    - `timestamp`: Date-time of the original camera-trap image.
+
+- **Site Statistics Table** (Optional):
+  - A summary table with operational data for each camera site.
+
+- **Species Folders**:
+  - Organised species breakout directories for expert validation.
+
+---
 
 ## Debugging and Logging
 
 - Verbose progress bars (`tqdm`) for tracking.
 - Debugging print statements for file and classification reconciliation.
 
-## Future Enhancements
+---
 
-- Improved error handling and logging.
-- Integration with cloud-based storage solutions.
+## **Future Enhancements**
+
+Planned improvements include:
+- Advanced error handling and logging.
+- Enhanced visualisation tools for classification data.
+- Vignette with example data folder for full processing demonstration.
 
 ---
 
-Feel free to contribute to this repository by submitting pull requests or issues. For questions, reach out to `<barry.brook@utas.edu.au>`.
-
+Feel free to contribute to this repository by submitting pull requests or issues. For questions, contact `<barry.brook@utas.edu.au>`.
