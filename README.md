@@ -1,6 +1,10 @@
-# mewc-table
+<img src="mewc_logo_hex.png" alt="MEWC Hex Sticker" width="200" align="right"/>
 
-A streamlined, Docker-driven workflow for post-processing AI-classified wildlife camera trap data from the MEWC system (see https://github.com/zaandahl/mewc). This repository provides tools to integrate automated AI detection with human expertise, facilitating the refinement and analysis of species classification and camera-trap metadata.
+# MEWC Table - post-processing for the Mega Efficient Wildlife Classifier
+
+# **Introduction**
+
+A streamlined, Docker-driven workflow for post-processing AI-classified wildlife camera trap data from the [MEWC system] (https://github.com/zaandahl/mewc). This repository provides tools to integrate automated AI detection with human expertise, facilitating the refinement and analysis of species classification and camera-trap metadata.
 
 ---
 
