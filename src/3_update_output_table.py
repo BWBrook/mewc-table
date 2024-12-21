@@ -1,4 +1,4 @@
-import os, piexif
+import os, piexif, shutil
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -41,7 +41,7 @@ def scan_animal_folders(service_directory):
         for class_folder in animal_dir.iterdir():
             if class_folder.is_dir():
                 class_name = class_folder.name
-                for file in class_folder.glob("*.JPG"):
+                for file in class_folder.glob("*.jp*g"):
                     base_filename = create_base_filename(file.name)
                     file_mapping[(base_filename, camera_site)] = (file, camera_site, class_name)
 
@@ -375,7 +375,7 @@ def update_flash_fired(service_directory, df):
 
     for animal_dir in tqdm(animal_dirs, desc="Processing animal folders"):
         camera_site = animal_dir.parent.name  # Extract camera_site from folder structure
-        for image_path in animal_dir.rglob("*.JPG"):  # Recursively search for images
+        for image_path in animal_dir.rglob("*.jp*g"):  # Recursively search for images
             # Normalize the filename by stripping the suffix
             base_filename = create_base_filename(image_path.name)
             flash_fired_value = extract_flash_fired(image_path)
@@ -387,6 +387,77 @@ def update_flash_fired(service_directory, df):
 
     print("Flash data updated for all matching rows.")
     return df
+
+def move_inferred_unknowns(service_directory, df):
+    """
+    Move files out of the unknown_animal folder if their updated class_name
+    in the dataframe is not unknown_animal, with a tqdm progress bar by camera site.
+
+    Parameters:
+    - service_directory: Path to the service directory
+    - df: DataFrame containing updated classifications (already in memory)
+
+    Returns:
+    - None; files are moved in the filesystem.
+    """
+
+    service_path = Path(service_directory)
+
+    # Recursively find all "unknown_animal" directories
+    unknown_dirs = list(service_path.rglob("unknown_animal"))
+
+    # Collect all camera sites that actually have an unknown_animal folder
+    camera_sites = sorted(
+        {
+            unknown_dir.parent.parent.name  # e.g., camera_site
+            for unknown_dir in unknown_dirs
+            if unknown_dir.parent.name == "animal"
+        }
+    )
+
+    print("Checking inferred unknown_animal images to move them to correct folders...")
+
+    # Iterate over camera sites in a tqdm progress bar
+    for camera_site in tqdm(camera_sites, desc="Moving inferred unknowns by site"):
+        # Filter unknown_animal dirs corresponding to this camera_site
+        site_unknown_dirs = [
+            ud for ud in unknown_dirs if ud.parent.parent.name == camera_site
+        ]
+
+        # For each unknown_animal folder in this camera_site
+        for unknown_dir in site_unknown_dirs:
+            # Find JPG files in this unknown_animal folder
+            for image_file in unknown_dir.glob("*.jp*g"):
+
+                # Normalize the local filename for matching
+                folder_base_fname = create_base_filename(image_file.name)
+
+                # Match rows in df by camera_site and normalized filename
+                mask = (
+                    (df["camera_site"] == camera_site) &
+                    (df["filename"].apply(create_base_filename) == create_base_filename(image_file.name))
+                )
+
+                # If no matching row in df, skip
+                if not mask.any():
+                    continue
+
+                # Grab the first matching row's class_name
+                final_class = df.loc[mask, "class_name"].iloc[0]
+
+                # If final_class differs from 'unknown_animal', move the file
+                if final_class != "unknown_animal":
+                    dest_folder = service_path / camera_site / "animal" / final_class
+                    dest_folder.mkdir(parents=True, exist_ok=True)
+
+                    dest_path = dest_folder / image_file.name
+
+                    try:
+                        shutil.move(str(image_file), str(dest_path))
+                    except Exception as e:
+                        print(f"Error moving {image_file} to {dest_path}: {e}")
+
+    print("All inferred unknown_animal files have been processed.")
 
 def main():
     """Execute the complete workflow for updating output table."""
@@ -421,6 +492,10 @@ def main():
     print("\nPhase 2: Adding flash fired data to adjusted classifications...")
     reconciled_df = update_flash_fired(service_directory, reconciled_df)
     
+    # Phase 3: Moving inferred unknowns to correct folders
+    print("\nPhase 3: Moving inferred unknowns to correct folders...")
+    move_inferred_unknowns(service_directory, reconciled_df)
+
     # Save the final updated table
     save_dataframe(reconciled_df, output_table_path)
     print("\nAll updates completed successfully!")

@@ -350,7 +350,7 @@ def process_animal_directories(service_base_dir, mapping):
         other_object_needed = False
         other_object_dir = None
         
-        for jpg_file in animal_dir.glob('*.JPG'):
+        for jpg_file in animal_dir.glob("*.jp*g"):
             base_filename = create_base_filename(jpg_file.name)
             key = (camera_site, base_filename)
             if key in mapping:
