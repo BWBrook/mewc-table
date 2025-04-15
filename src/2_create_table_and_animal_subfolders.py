@@ -350,7 +350,7 @@ def process_animal_directories(service_base_dir, mapping):
         other_object_needed = False
         other_object_dir = None
         
-        for jpg_file in animal_dir.glob("*.jp*g"):
+        for jpg_file in animal_dir.glob("*.[jJ][pP]*[gG]"):
             base_filename = create_base_filename(jpg_file.name)
             key = (camera_site, base_filename)
             if key in mapping:
@@ -373,7 +373,7 @@ def process_animal_directories(service_base_dir, mapping):
                 except Exception as e:
                     print(f"Error moving {jpg_file} to 'other_object': {e}")
 
-def main():
+def main(): 
     """Execute the complete workflow for creating species table and organizing folders."""
     config = load_config()
     
