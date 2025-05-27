@@ -129,7 +129,7 @@ def reconcile_table(df, file_mapping):
     updates_count = 0  # Counter for updates
 
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="Reconciling table"):
-        base_filename = create_base_filename(row['filename'])
+        base_filename = create_base_filename(row['filename']).lower()
         camera_site = row['camera_site']
 
         if (base_filename, camera_site) in file_mapping:
@@ -379,12 +379,13 @@ def update_flash_fired(service_directory, df):
         camera_site = animal_dir.parent.name  # Extract camera_site from folder structure
         for image_path in animal_dir.rglob("*.jp*g"):  # Recursively search for images
             # Normalize the filename by stripping the suffix
-            base_filename = create_base_filename(image_path.name)
+            base_filename = create_base_filename(image_path.name).lower()
             flash_fired_value = extract_flash_fired(image_path)
 
             # Update the table for the matching filename and camera_site
-            mask = (df['filename'].apply(create_base_filename) == base_filename) & \
-                   (df['camera_site'] == camera_site)
+            mask = (
+                df['filename'].apply(lambda x: create_base_filename(x).lower()) == base_filename
+            ) & (df['camera_site'] == camera_site)
             df.loc[mask, 'flash_fired'] = flash_fired_value
 
     print("Flash data updated for all matching rows.")
@@ -432,12 +433,13 @@ def move_inferred_unknowns(service_directory, df):
             for image_file in unknown_dir.glob("*.jp*g"):
 
                 # Normalize the local filename for matching
-                folder_base_fname = create_base_filename(image_file.name)
+                folder_base_fname = create_base_filename(image_file.name).lower()
 
                 # Match rows in df by camera_site and normalized filename
                 mask = (
-                    (df["camera_site"] == camera_site) &
-                    (df["filename"].apply(create_base_filename) == create_base_filename(image_file.name))
+                    (df['camera_site'] == camera_site) &
+                    (df['filename'].apply(lambda x: create_base_filename(x).lower())
+                         == create_base_filename(image_file.name).lower())
                 )
 
                 # If no matching row in df, skip
@@ -504,4 +506,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
