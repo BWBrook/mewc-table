@@ -400,7 +400,7 @@ def update_flash_fired(service_directory, df):
 
     for animal_dir in tqdm(animal_dirs, desc="Processing animal folders"):
         camera_site = animal_dir.parent.name  # Extract camera_site from folder structure
-        for image_path in animal_dir.rglob("*.jp*g"):  # Recursively search for images
+        for image_path in animal_dir.rglob('*.[jJ][pP][eE]?[gG]'):  # Recursively search for images
             # Normalize the filename by stripping the suffix
             base_filename = create_base_filename(image_path.name).lower()
             flash_fired_value = extract_flash_fired(image_path)
@@ -453,7 +453,7 @@ def move_inferred_unknowns(service_directory, df):
         # For each unknown_animal folder in this camera_site
         for unknown_dir in site_unknown_dirs:
             # Find JPG files in this unknown_animal folder
-            for image_file in unknown_dir.glob("*.jp*g"):
+            for image_file in unknown_dir.glob('*.[jJ][pP][eE]?[gG]'):
 
                 # Normalize the local filename for matching
                 folder_base_fname = create_base_filename(image_file.name).lower()
