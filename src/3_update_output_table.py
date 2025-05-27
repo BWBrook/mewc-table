@@ -48,20 +48,21 @@ def scan_animal_folders(service_directory):
                 continue
             class_name = class_folder.name
 
-            for file in class_folder.rglob('*.[jJ][pP][eE]?[gG]'):
-                base = create_base_filename(file.name).lower()
-                key = (base, camera_site)
+            for file in class_folder.rglob('*'):
+                if file.suffix.lower() in ('.jpg', '.jpeg'):
+                    base = create_base_filename(file.name).lower()
+                    key = (base, camera_site)
 
-                # duplicate across species?
-                if key in file_mapping and file_mapping[key][2] != class_name:
-                    dup_records.append(
-                        (key[0], key[1],
-                         file_mapping[key][2], class_name,
-                         file_mapping[key][0], file)
-                    )
+                    # duplicate across species?
+                    if key in file_mapping and file_mapping[key][2] != class_name:
+                        dup_records.append(
+                            (key[0], key[1],
+                            file_mapping[key][2], class_name,
+                            file_mapping[key][0], file)
+                        )
 
-                # later folder in sorted order overwrites earlier one
-                file_mapping[key] = (file, camera_site, class_name)
+                    # later folder in sorted order overwrites earlier one
+                    file_mapping[key] = (file, camera_site, class_name)
 
     if dup_records:
         print("\nERROR: Same image found in multiple species folders:")
@@ -170,7 +171,7 @@ def reconcile_table(df, file_mapping):
                             else -1
                         )
                     )
-                    row['expert_updated'] = 3
+                    row['expert_updated'] = 3        
                     updated_rows.append(row.to_dict())
                     updates_count += 1  # Increment counter
                 file_mapping.pop((base_filename, camera_site))
@@ -213,6 +214,7 @@ def reconcile_table(df, file_mapping):
             'event': 0,
             'timestamp': timestamp
         }
+
         updated_rows.append(new_row)
 
     # Ensure all rows have consistent keys
@@ -394,24 +396,35 @@ def update_flash_fired(service_directory, df):
     # Initialize flash_fired column
     df['flash_fired'] = -1  # Default to -1 for rows not matched to any image
     
+    if '_fnorm' not in df.columns:
+        df['_fnorm'] = df['filename'].apply(lambda x: create_base_filename(x).lower())
+
     # Iterate over camera sites
     service_path = Path(service_directory)
     animal_dirs = service_path.rglob("animal")
 
     for animal_dir in tqdm(animal_dirs, desc="Processing animal folders"):
         camera_site = animal_dir.parent.name  # Extract camera_site from folder structure
-        for image_path in animal_dir.rglob('*.[jJ][pP][eE]?[gG]'):  # Recursively search for images
-            # Normalize the filename by stripping the suffix
-            base_filename = create_base_filename(image_path.name).lower()
-            flash_fired_value = extract_flash_fired(image_path)
 
-            # Update the table for the matching filename and camera_site
+        for image_path in animal_dir.rglob('*'):
+            if not image_path.is_file():
+                continue
+            if image_path.suffix.lower() not in ('.jpg', '.jpeg'):
+                continue
+
+            base_filename = create_base_filename(image_path.name).lower()
+            flash_value   = extract_flash_fired(image_path)
+
             mask = (
-                df['filename'].apply(lambda x: create_base_filename(x).lower()) == base_filename
-            ) & (df['camera_site'] == camera_site)
-            df.loc[mask, 'flash_fired'] = flash_fired_value
+                (df['_fnorm'] == base_filename) &
+                (df['camera_site'] == camera_site)
+            )
+
+            df.loc[mask, 'flash_fired'] = flash_value
 
     print("Flash data updated for all matching rows.")
+    df.drop(columns='_fnorm', inplace=True)
+
     return df
 
 def move_inferred_unknowns(service_directory, df):
@@ -453,7 +466,11 @@ def move_inferred_unknowns(service_directory, df):
         # For each unknown_animal folder in this camera_site
         for unknown_dir in site_unknown_dirs:
             # Find JPG files in this unknown_animal folder
-            for image_file in unknown_dir.glob('*.[jJ][pP][eE]?[gG]'):
+            for image_file in unknown_dir.rglob('*'):
+                if not image_file.is_file():
+                    continue
+                if image_file.suffix.lower() not in ('.jpg', '.jpeg'):
+                    continue
 
                 # Normalize the local filename for matching
                 folder_base_fname = create_base_filename(image_file.name).lower()
@@ -462,7 +479,7 @@ def move_inferred_unknowns(service_directory, df):
                 mask = (
                     (df['camera_site'] == camera_site) &
                     (df['filename'].apply(lambda x: create_base_filename(x).lower())
-                         == create_base_filename(image_file.name).lower())
+                        == create_base_filename(image_file.name).lower())
                 )
 
                 # If no matching row in df, skip
@@ -497,35 +514,39 @@ def main():
         print("Configuration file is missing required fields: 'service_directory' and/or 'output_table'.")
         raise SanityCheckError()
 
-    print("\nUPDATED: 1:01pm 27 May 2025")
-    print("\nPhase 1: Updating output table...")
-    # Load the consolidated table
+    print("\nUpdating output table...")
+    # 1 ─ load config / table
     df = load_dataframe(output_table_path)
 
-    # Scan the \animal folders
-    file_mapping = scan_animal_folders(service_directory)
+    # 2 ─ scan folders, reconcile table   (class_name, expert_updated)
+    file_mapping   = scan_animal_folders(service_directory)
+    reconciled_df  = reconcile_table(df, file_mapping)
 
-    # Reconcile the table
-    reconciled_df = reconcile_table(df, file_mapping)
+    # 3 ─ update EXIF flash *before* events
+    reconciled_df  = update_flash_fired(service_directory, reconciled_df)
 
-    # Recalculate events and refine classifications
-    int_min = config.get('indep_event_interval_minutes')
-    p_thresh = config.get('low_confidence_prob_threshold')
-    reconciled_df = recalc_events_and_infer_unknowns(reconciled_df, int_min, p_thresh)
+    # 3a ─ prune rows whose images are gone
+    orphans = reconciled_df[reconciled_df['flash_fired'] == -1]
+    if not orphans.empty:
+        print(f"Removing {len(orphans)} orphan rows (images deleted by expert).")
+        # keep a record if you like
+        orphans[['camera_site','filename']].to_csv(
+            output_table_path.with_suffix('.orphans.csv'), index=False)
+        reconciled_df = reconciled_df[reconciled_df['flash_fired'] != -1]
 
-    # Count animals per event and remove duplicate rows
-    reconciled_df = count_animals_per_event(reconciled_df)
-    
-    # Phase 2: Adding flash fired data
-    print("\nPhase 2: Adding flash fired data to adjusted classifications...")
-    reconciled_df = update_flash_fired(service_directory, reconciled_df)
-    
-    # Phase 3: Moving inferred unknowns to correct folders
-    print("\nPhase 3: Moving inferred unknowns to correct folders...")
+    # 4 ─ recompute events and unknown-inference on the *pruned* table
+    reconciled_df  = recalc_events_and_infer_unknowns(
+                        reconciled_df,
+                        config.get('indep_event_interval_minutes'),
+                        config.get('low_confidence_prob_threshold'))
+
+    # 5 ─ count animals per event / deduplicate
+    reconciled_df  = count_animals_per_event(reconciled_df)
+
+    # 6 ─ move inferred unknowns, then save
     move_inferred_unknowns(service_directory, reconciled_df)
-
-    # Save the final updated table
     save_dataframe(reconciled_df, output_table_path)
+
     print("\nAll updates completed successfully!")
 
 if __name__ == "__main__":
