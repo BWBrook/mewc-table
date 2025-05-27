@@ -29,24 +29,47 @@ def save_dataframe(df, output_table_path):
 
 def scan_animal_folders(service_directory):
     """
-    Recursively scan all \animal folders and return a dictionary mapping
-    (base_filename, camera_site) -> (full_path, camera_site, class_name).
-    Matches images regardless of case in the file extension.
+    Return mapping (base_filename, camera_site) -> (path, camera_site, class_name)
+    * Case-insensitive on filenames
+    * Deterministic folder order (alphabetical)
+    * Aborts with clear message if duplicates exist
     """
     file_mapping = {}
-    service_path = Path(service_directory)
-    animal_dirs = service_path.rglob("animal")
+    dup_records = []  # collect duplicates to report once
 
-    for animal_dir in tqdm(animal_dirs, desc="Scanning animal folders"):
-        camera_site = animal_dir.parent.name  # Get parent folder as camera_site
-        for class_folder in animal_dir.iterdir():
-            if class_folder.is_dir():
-                class_name = class_folder.name
-                # Now robustly find all jpg/jpeg files regardless of case
-                for file in class_folder.rglob('*.[jJ][pP][eE]?[gG]'):
-                    # Lowercase the file name for robust, case-insensitive matching
-                    base_filename = create_base_filename(file.name.lower())
-                    file_mapping[(base_filename, camera_site)] = (file, camera_site, class_name)
+    for animal_dir in tqdm(Path(service_directory).rglob("animal"),
+                           desc="Scanning animal folders"):
+        camera_site = animal_dir.parent.name
+
+        # deterministic alphabetical order, case-insensitive
+        for class_folder in sorted(animal_dir.iterdir(),
+                                   key=lambda p: p.name.lower()):
+            if not class_folder.is_dir():
+                continue
+            class_name = class_folder.name
+
+            for file in class_folder.rglob('*.[jJ][pP][eE]?[gG]'):
+                base = create_base_filename(file.name).lower()
+                key = (base, camera_site)
+
+                # duplicate across species?
+                if key in file_mapping and file_mapping[key][2] != class_name:
+                    dup_records.append(
+                        (key[0], key[1],
+                         file_mapping[key][2], class_name,
+                         file_mapping[key][0], file)
+                    )
+
+                # later folder in sorted order overwrites earlier one
+                file_mapping[key] = (file, camera_site, class_name)
+
+    if dup_records:
+        print("\nERROR: Same image found in multiple species folders:")
+        for base, site, old_cls, new_cls, old_path, new_path in dup_records:
+            print(f"  {site}/{base}:  '{old_cls}' @ {old_path}  <->  "
+                  f"'{new_cls}' @ {new_path}")
+        raise SanityCheckError("Resolve duplicates before re-running.")
+
     return file_mapping
 
 def create_base_filename(filename):
@@ -474,6 +497,7 @@ def main():
         print("Configuration file is missing required fields: 'service_directory' and/or 'output_table'.")
         raise SanityCheckError()
 
+    print("\nUPDATED: 1:01pm 27 May 2025")
     print("\nPhase 1: Updating output table...")
     # Load the consolidated table
     df = load_dataframe(output_table_path)
