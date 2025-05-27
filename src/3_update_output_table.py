@@ -30,7 +30,8 @@ def save_dataframe(df, output_table_path):
 def scan_animal_folders(service_directory):
     """
     Recursively scan all \animal folders and return a dictionary mapping
-    base_filename -> (full_path, camera_site, class_name).
+    (base_filename, camera_site) -> (full_path, camera_site, class_name).
+    Matches images regardless of case in the file extension.
     """
     file_mapping = {}
     service_path = Path(service_directory)
@@ -41,10 +42,11 @@ def scan_animal_folders(service_directory):
         for class_folder in animal_dir.iterdir():
             if class_folder.is_dir():
                 class_name = class_folder.name
-                for file in class_folder.glob("*.jp*g"):
-                    base_filename = create_base_filename(file.name)
+                # Now robustly find all jpg/jpeg files regardless of case
+                for file in class_folder.rglob('*.[jJ][pP][eE]?[gG]'):
+                    # Lowercase the file name for robust, case-insensitive matching
+                    base_filename = create_base_filename(file.name.lower())
                     file_mapping[(base_filename, camera_site)] = (file, camera_site, class_name)
-
     return file_mapping
 
 def create_base_filename(filename):
@@ -502,3 +504,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
