@@ -116,15 +116,15 @@ def extract_timestamp(filepath):
 
 def parse_timestamps(reconciled_df):
     """
-    Parse mixed-format timestamps, ensure consistency, and reformat as 'DD/MM/YYYY HH:MM'.
+    Parse mixed-format timestamps, ensure consistency, and reformat as 'DD/MM/YYYY HH:MM:SS'.
     """
     # Make a copy to avoid SettingWithCopyWarning
     df = reconciled_df.copy()
     
-    # First attempt: Parse as 'DD/MM/YYYY HH:MM'
+    # First attempt: Parse as 'DD/MM/YYYY HH:MM:SS'
     df['timestamp_parsed'] = pd.to_datetime(
         df['timestamp'], 
-        format='%d/%m/%Y %H:%M', 
+        format='%d/%m/%Y %H:%M:%S', 
         errors='coerce'
     )
 
@@ -139,6 +139,11 @@ def parse_timestamps(reconciled_df):
             errors='coerce'
         )
         df.loc[nat_mask, 'timestamp_parsed'] = alternative_parsed
+
+    bad = df['timestamp_parsed'].isna().sum()
+    if bad:
+        print(f"WARNING: {bad} timestamps failed to parse; rows will be dropped.")
+        df = df[~df['timestamp_parsed'].isna()]
 
     # Sort by datetime and format consistently
     df = df.sort_values(['camera_site', 'timestamp_parsed'])
@@ -525,7 +530,7 @@ def main():
     # 3 ─ update EXIF flash *before* events
     reconciled_df  = update_flash_fired(service_directory, reconciled_df)
 
-    # 3a ─ prune rows whose images are gone
+    #3a ─ prune rows whose images are gone
     orphans = reconciled_df[reconciled_df['flash_fired'] == -1]
     if not orphans.empty:
         print(f"Removing {len(orphans)} orphan rows (images deleted by expert).")
@@ -545,6 +550,7 @@ def main():
 
     # 6 ─ move inferred unknowns, then save
     move_inferred_unknowns(service_directory, reconciled_df)
+
     save_dataframe(reconciled_df, output_table_path)
 
     print("\nAll updates completed successfully!")
