@@ -92,7 +92,8 @@ def extract_timestamp(filepath):
     Return formatted timestamp or 'NA' if both are unavailable.
     """
     try:
-        with Image.open(filepath) as img:
+        # Camera images are JPEG; avoid probing other parsers by file content.
+        with Image.open(filepath, formats=["JPEG"]) as img:
             exif_data = piexif.load(img.info.get("exif", b""))
             date_time_orig = exif_data.get("Exif", {}).get(piexif.ExifIFD.DateTimeOriginal, None)
             
